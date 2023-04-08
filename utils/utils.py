@@ -1,4 +1,4 @@
-from aiosqlite import connect, Cursor, Connection
+from aiosqlite import connect
 
 class DB:
     def __init__(self) -> None:
@@ -13,6 +13,16 @@ class DB:
         await self.conn.commit()
         return res
     
+    async def get_fetchone(self, req: str, args: tuple = None):
+        res =  await self.curr.execute(req, args)
+        await self.conn.commit()
+        return await res.fetchone()
+    
+    async def get_fetchall(self, req: str, args: tuple = None):
+        res =  await self.curr.execute(req, args)
+        await self.conn.commit()
+        return await res.fetchall()
+    
 class bcolors:
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
@@ -22,3 +32,4 @@ class bcolors:
     ENDC = '\033[0m'
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
+    

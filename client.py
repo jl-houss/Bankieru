@@ -3,7 +3,7 @@ import traceback
 import sys
 import nextcord
 
-from utils import DB
+from utils.utils import DB
 
 from os import environ as env
 
