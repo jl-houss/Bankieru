@@ -106,8 +106,25 @@ class Banks(Cog):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
+        
+        confirmEmbed = Embed(
+            title="Confirmation",
+            description="Are you sure about opening a bank with these informations ?",
+            color=Colour.yellow(),
+        )
+        confirmEmbed.add_field(name="Informations", value=f"**Name** : ``{name}``\n**Currency name** : ``{currency_name}``\n**Currency code** : ``{currency_code}``\n**Balance** : ``{balance}``")
 
-        bank_category: CategoryChannel = await interaction.guild.create_category(name=name)
+        confirmView = Confirm(f"`{name}` Bank created !", "Creation canceled !")
+        await interaction.response.send_message(
+            embed=confirmEmbed, view=confirmView, ephemeral=True
+        )
+
+        await confirmView.wait()
+
+        if not confirmView.value:
+            return
+
+        bank_category: CategoryChannel = await interaction.guild.create_category(name=f"{name} bank")
         
         bank_logs_channel: TextChannel = await bank_category.create_text_channel(name="logs")
 
@@ -126,9 +143,6 @@ class Banks(Cog):
             ),
         )
         
-        embed = Embed(title=f"`{name}` Bank opened !", color=EMBED_COLOR)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
     @application_checks.has_role(TOPG_ROLE)
     @bank.subcommand(name="close")
     async def close(
@@ -165,7 +179,7 @@ class Banks(Cog):
             description=f"Are you sure about closing **`{bank[4]}`** ?",
             color=Colour.yellow(),
         )
-        confirmView = Confirm(f"`{bank[4]}` Bank closed !", "Closing canceled !")
+        confirmView = Confirm(confirm_message=f"`{bank[4]}` Bank closed !", cancel_message="Closing canceled !")
         await interaction.response.send_message(
             embed=confirmEmbed, view=confirmView, ephemeral=True
         )

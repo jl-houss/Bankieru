@@ -64,14 +64,24 @@ class Accounts(Cog):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
-
-        await self.db.request(
-            "INSERT INTO accounts VALUES (?,?,?,?)",
-            (interaction.user.id, bank[0], 0.00, datetime.now()),
+        
+        confirmEmbed = Embed(
+            title="Confirmation",
+            description="Are you sure about opening a new account ?",
+            color=Colour.yellow(),
+        )
+        confirmView = Confirm(confirm_message="Account created !", cancel_message="Creation canceled !")
+        await interaction.response.send_message(
+            embed=confirmEmbed, view=confirmView, ephemeral=True
         )
 
-        embed = Embed(title="Account created !", color=EMBED_COLOR)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await confirmView.wait()
+
+        if confirmView.value:
+            await self.db.request(
+                "INSERT INTO accounts VALUES (?,?,?,?)",
+                (interaction.user.id, bank[0], 0.00, datetime.now()),
+            )
 
     @account.subcommand(name="close")
     async def close(self, interaction: Interaction):
@@ -99,7 +109,7 @@ class Accounts(Cog):
             description="Are you sure about closing your account ?",
             color=Colour.yellow(),
         )
-        confirmView = Confirm("Account closed !", "Closing canceled !")
+        confirmView = Confirm(confirm_message="Account closed !", cancel_message="Closing canceled !")
         await interaction.response.send_message(
             embed=confirmEmbed, view=confirmView, ephemeral=True
         )
@@ -131,14 +141,14 @@ class Accounts(Cog):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
-        creation_date = datetime.strptime(account[2], "%Y-%m-%d %H:%M:%S.%f")
+        creation_date = datetime.strptime(account[3], "%Y-%m-%d %H:%M:%S.%f")
 
         embed = Embed(
             title=f"Account of `{interaction.user.name}`",
             description=f"Created {creation_date.strftime('%A %d %B %Y')}",
             color=EMBED_COLOR,
         )
-        embed.add_field(name="Balance:", value=f"{account[1]}€")
+        embed.add_field(name="Balance:", value=f"{account[2]}€")
         embed.set_thumbnail(url=interaction.user.avatar)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -200,8 +210,8 @@ class Accounts(Cog):
                 color=Colour.yellow(),
             )
             confirmView = Confirm(
-                f"{amount}€ have been transfered to `{receiver.name}` !",
-                "Transfer canceled !",
+                confirm_message=f"{amount}€ have been transfered to `{receiver.name}` !",
+                cancel_message="Transfer canceled !",
             )
             await interaction.response.send_message(
                 embed=confirmEmbed, view=confirmView, ephemeral=True
