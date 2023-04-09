@@ -17,7 +17,6 @@ from nextcord import (
     CategoryChannel,
     utils,
 )
-from uuid import uuid1, UUID
 
 
 class Banks(Cog):
@@ -143,6 +142,14 @@ class Banks(Cog):
             ),
         )
         
+        bank_id = (await self.db.get_fetchone("SELECT bankId FROM banks WHERE name = ?", (name,)))[0]
+        
+        logEmbed = Embed(title=f"`{name}` Bank created !", color=EMBED_COLOR)
+        logEmbed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
+        logEmbed.set_thumbnail(url=interaction.guild.icon)
+        logEmbed.set_footer(text=f"BANK ID: {bank_id}")
+        await self.client.get_channel(BANKS_LOGS).send(embed=logEmbed)
+        
     @application_checks.has_role(TOPG_ROLE)
     @bank.subcommand(name="close")
     async def close(
@@ -196,6 +203,12 @@ class Banks(Cog):
 
             await self.db.request("DELETE FROM banks WHERE bankId = ?", (bank[0],))
             await self.db.request("DELETE FROM accounts WHERE bankId = ?", (bank[0],))
+            
+            logEmbed = Embed(title=f"`{bank[4]}` Bank closed !", color=EMBED_COLOR)
+            logEmbed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
+            logEmbed.set_thumbnail(url=interaction.guild.icon)
+            logEmbed.set_footer(text=f"BANK ID: {bank[0]}")
+            await self.client.get_channel(BANKS_LOGS).send(embed=logEmbed)
 
     @application_checks.has_permissions(administrator=True)
     @bank.subcommand(name="info")

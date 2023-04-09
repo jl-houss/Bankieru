@@ -55,7 +55,7 @@ class Accounts(Cog):
             return
 
         account = await self.db.get_fetchone(
-            "SELECT * FROM accounts WHERE userId = ?", (interaction.user.id,)
+            "SELECT * FROM accounts WHERE userId = ? AND bankId = ?", (interaction.user.id, bank[0])
         )
 
         if account:
@@ -82,6 +82,14 @@ class Accounts(Cog):
                 "INSERT INTO accounts VALUES (?,?,?,?)",
                 (interaction.user.id, bank[0], 0.00, datetime.now()),
             )
+            
+            logEmbed = Embed(title=f"Account created at `{bank[4]}` Bank !", color=EMBED_COLOR)
+            logEmbed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
+            logEmbed.set_thumbnail(url=interaction.guild.icon)
+            logEmbed.set_footer(text=f"BANK ID: {bank[0]}")
+            await self.client.get_channel(ACCOUNTS_LOGS).send(embed=logEmbed)
+            await self.client.get_channel(bank[3]).send(embed=logEmbed)
+            
 
     @account.subcommand(name="close")
     async def close(self, interaction: Interaction):
@@ -94,7 +102,7 @@ class Accounts(Cog):
             return
 
         account = await self.db.get_fetchone(
-            "SELECT * FROM accounts WHERE userId = ?", (interaction.user.id,)
+            "SELECT * FROM accounts WHERE userId = ? AND bankId = ?", (interaction.user.id, bank[0])
         )
 
         if not account:
@@ -120,6 +128,13 @@ class Accounts(Cog):
             await self.db.request(
                 "DELETE FROM accounts WHERE userId = ?", (interaction.user.id,)
             )
+            
+            logEmbed = Embed(title=f"Account closed at `{bank[4]}` Bank", color=EMBED_COLOR)
+            logEmbed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
+            logEmbed.set_thumbnail(url=interaction.guild.icon)
+            logEmbed.set_footer(text=f"BANK ID: {bank[0]}")
+            await self.client.get_channel(ACCOUNTS_LOGS).send(embed=logEmbed)
+            await self.client.get_channel(bank[3]).send(embed=logEmbed)
 
     @account.subcommand(name="info")
     async def info(self, interaction: Interaction):
@@ -132,7 +147,7 @@ class Accounts(Cog):
             return
 
         account = await self.db.get_fetchone(
-            "SELECT * FROM accounts WHERE userId = ?", (interaction.user.id,)
+            "SELECT * FROM accounts WHERE userId = ? AND bankId = ?", (interaction.user.id, bank[0])
         )
         if not account:
             embed = Embed(
@@ -148,7 +163,7 @@ class Accounts(Cog):
             description=f"Created {creation_date.strftime('%A %d %B %Y')}",
             color=EMBED_COLOR,
         )
-        embed.add_field(name="Balance:", value=f"{account[2]}€")
+        embed.add_field(name="Balance:", value=f"{account[2]}{bank[6]}")
         embed.set_thumbnail(url=interaction.user.avatar)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -185,49 +200,59 @@ class Accounts(Cog):
                 title="You do not have an account at this bank !", color=Colour.red()
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
-
-        elif not receiver_account:
+            return
+        
+        if not receiver_account:
             embed = Embed(
                 title="The receiver does not have an account at this bank !",
                 color=Colour.red(),
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
-
-        elif interaction.user == receiver:
+            return
+        
+        if interaction.user == receiver:
             embed = Embed(
                 title="You can't send money to yourself !", color=Colour.red()
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
-
-        elif user_account[1] < amount:
+            return
+        
+        if user_account[2] < amount:
             embed = Embed(title="You do not have enough money !", color=Colour.red())
             await interaction.response.send_message(embed=embed, ephemeral=True)
+            return 
+    
+        confirmEmbed = Embed(
+            title="Confirmation",
+            description=f"Are you sure about sending {amount}{bank[6]} to {receiver.name} ?",
+            color=Colour.yellow(),
+        )
+        confirmView = Confirm(
+            confirm_message=f"{amount}{bank[6]} have been transfered to `{receiver.name}` !",
+            cancel_message="Transfer canceled !",
+        )
+        await interaction.response.send_message(
+            embed=confirmEmbed, view=confirmView, ephemeral=True
+        )
 
-        else:
-            confirmEmbed = Embed(
-                title="Confirmation",
-                description=f"Are you sure about sending {amount}€ to {receiver.name} ?",
-                color=Colour.yellow(),
-            )
-            confirmView = Confirm(
-                confirm_message=f"{amount}€ have been transfered to `{receiver.name}` !",
-                cancel_message="Transfer canceled !",
-            )
-            await interaction.response.send_message(
-                embed=confirmEmbed, view=confirmView, ephemeral=True
-            )
+        await confirmView.wait()
 
-            await confirmView.wait()
-
-            if confirmView.value:
-                await self.db.request(
-                    "UPDATE accounts SET balance = ? WHERE userId = ?",
-                    (user_account[1] - amount, interaction.user.id),
-                )
-                await self.db.request(
-                    "UPDATE accounts SET balance = ? WHERE userId = ?",
-                    (receiver_account[1] + amount, receiver.id),
-                )
+        if confirmView.value:
+            await self.db.request(
+                "UPDATE accounts SET balance = ? WHERE userId = ? AND bankId = ?",
+                (user_account[2] - amount, interaction.user.id, bank[0]),
+            )
+            await self.db.request(
+                "UPDATE accounts SET balance = ? WHERE userId = ? AND bankId = ?",
+                (receiver_account[2] + amount, receiver.id, bank[0]),
+            )
+            
+            logEmbed = Embed(title=f"{interaction.user} sent `{amount}{bank[6]}` to {receiver} at `{bank[4]}` Bank", color=EMBED_COLOR)
+            logEmbed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
+            logEmbed.set_thumbnail(url=interaction.guild.icon)
+            logEmbed.set_footer(text=f"BANK ID: {bank[0]}")
+            await self.client.get_channel(TRANSACTIONS_LOGS).send(embed=logEmbed)
+            await self.client.get_channel(bank[3]).send(embed=logEmbed)
 
 
 def setup(client: Bot):

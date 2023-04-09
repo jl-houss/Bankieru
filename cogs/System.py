@@ -1,8 +1,10 @@
 from nextcord.ext.commands import Cog, Bot
 
 import os
+import asyncio
 
 from nextcord.ext import application_checks
+from nextcord.abc import GuildChannel
 from nextcord import (
 	Color,
 	SlashOption,
@@ -195,6 +197,41 @@ class System(Cog):
 
 			await interaction.send(embed=reloaded)
 			await self.client.sync_all_application_commands()
+   
+	@application_checks.has_permissions(manage_messages=True)
+	@slash_command(name="clear", description="To clear a channel")
+	async def clear_channel(
+		self,
+		interaction: Interaction,
+		channel: GuildChannel = SlashOption(
+			name="channel", description="The channel to clear", required=False
+		),
+		limit: int = SlashOption(
+			name="limit", description="Number of messages to clear", required=False
+		),
+	):
+
+		if not channel:
+			channel = interaction.channel
+
+		clearing = Embed(title="Clearing the channel...", color=Color.green())
+
+		await interaction.send(embed=clearing)
+
+		await channel.purge(limit=int(limit) if limit else None)
+
+		cleared = Embed(title="The channel has been cleared", color=Color.green())
+		cleared.set_author(
+			icon_url=interaction.user.avatar.url,
+			name=interaction.user.name,
+		)
+
+		response = await interaction.followup.send(embed=cleared)
+
+		await asyncio.sleep(5)
+		if channel != interaction.channel:
+			await clearing.delete()
+		await response.delete()
 
 
 def setup(client: Bot):
