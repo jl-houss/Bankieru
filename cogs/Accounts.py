@@ -19,7 +19,8 @@ from nextcord import (
     ButtonStyle,
     Member,
     PermissionOverwrite,
-    utils
+    utils,
+    Message
 
 )
 
@@ -253,6 +254,14 @@ class Accounts(Cog):
                     "UPDATE accounts SET balance = ? WHERE userId = ?",
                     (receiver_account[1] + amount, receiver.id),
                 )
+                
+    @Cog.listener()
+    async def on_message(self, message : Message):
+        bank_category_id = await self.db.get_fetchone("SELECT bankCategoryId FROM banks WHERE guildId=?", (message.guild.id,))
+        if not message.guild:
+            return
+        if message.channel.category.id == bank_category_id[0] and not message.content.startswith("/") and message.author.id!=self.client.user.id:
+            await message.delete()
 
 
 def setup(client: Bot):
