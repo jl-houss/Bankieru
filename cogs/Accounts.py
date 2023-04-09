@@ -18,6 +18,9 @@ from nextcord import (
     ui,
     ButtonStyle,
     Member,
+    PermissionOverwrite,
+    utils
+
 )
 
 
@@ -35,6 +38,7 @@ class Accounts(Cog):
                 "bankId"	    INTEGER NOT NULL,
                 "balance"	    REAL NOT NULL,
                 "created_at"	TEXT NOT NULL,
+                "account_channel" INTEGER NOT NULL UNIQUE,
                 PRIMARY KEY("userId")
             );"""
         )
@@ -68,7 +72,7 @@ class Accounts(Cog):
         confirmEmbed = Embed(
             title="Confirmation",
             description="Are you sure about opening a new account ?",
-            color=Colour.yellow(),
+            color=EMBED_COLOR,
         )
         confirmView = Confirm(confirm_message="Account created !", cancel_message="Creation canceled !")
         await interaction.response.send_message(
@@ -78,9 +82,23 @@ class Accounts(Cog):
         await confirmView.wait()
 
         if confirmView.value:
+            perms = {
+            interaction.guild.default_role : PermissionOverwrite(view_channel=False),
+            interaction.user : PermissionOverwrite(view_channel=True)
+            }
+        
+            bank_category = utils.get(self.client.get_guild(bank[1]).categories, id=bank[2])
+
+            account_channel = await interaction.guild.create_text_channel(name=f"{interaction.user.name}-account", category=bank_category, overwrites=perms)
+
+            mention_message = await account_channel.send(interaction.user.mention)
+            await mention_message.delete()
+
+            account_channel_embed = Embed(title=f"Account of {interaction.user}", description=f"{interaction.user.mention} this is your account channel.\nAny action on your account will be made \nfrom here using the panel below.", color=EMBED_COLOR)
+            await account_channel.send(embed=account_channel_embed)
             await self.db.request(
-                "INSERT INTO accounts VALUES (?,?,?,?)",
-                (interaction.user.id, bank[0], 0.00, datetime.now()),
+                "INSERT INTO accounts VALUES (?,?,?,?,?)",
+                (interaction.user.id, bank[0], 0.00, datetime.now(), account_channel.id),
             )
             
             logEmbed = Embed(title=f"Account created at `{bank[4]}` Bank !", color=EMBED_COLOR)
@@ -115,7 +133,7 @@ class Accounts(Cog):
         confirmEmbed = Embed(
             title="Confirmation",
             description="Are you sure about closing your account ?",
-            color=Colour.yellow(),
+            color=EMBED_COLOR,
         )
         confirmView = Confirm(confirm_message="Account closed !", cancel_message="Closing canceled !")
         await interaction.response.send_message(
@@ -125,6 +143,8 @@ class Accounts(Cog):
         await confirmView.wait()
 
         if confirmView.value:
+            account_channel = utils.get(self.client.get_all_channels(), id=account[4])
+            await account_channel.delete()
             await self.db.request(
                 "DELETE FROM accounts WHERE userId = ?", (interaction.user.id,)
             )
@@ -189,10 +209,10 @@ class Accounts(Cog):
             return
 
         user_account = await self.db.get_fetchone(
-            "SELECT * FROM accounts WHERE userId = ?", (interaction.user.id,)
+            "SELECT * FROM accounts WHERE userId = ? AND bankId=?", (interaction.user.id, bank[0])
         )
         receiver_account = await self.db.get_fetchone(
-            "SELECT * FROM accounts WHERE userId = ?", (receiver.id,)
+            "SELECT * FROM accounts WHERE userId = ? AND bankId=?", (receiver.id, bank[0])
         )
 
         if not user_account:
@@ -218,7 +238,12 @@ class Accounts(Cog):
             return
         
         if user_account[2] < amount:
-            embed = Embed(title="You do not have enough money !", color=Colour.red())
+            embed = Embed(title="You do not have enough money !", description=f"You only have ``{user_account[1]}{bank[6]}`` In your account", color=Colour.red())
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        if user_account[4]!=interaction.channel.id:
+            channel = self.client.get_channel(user_account[4])
+            embed = Embed(title="You Cannot use this command here!", description=f"You can only use This command in Your account's channel : {channel.mention} .", color=Colour.red())
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return 
     

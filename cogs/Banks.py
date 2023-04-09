@@ -16,6 +16,7 @@ from nextcord import (
     TextChannel,
     CategoryChannel,
     utils,
+    PermissionOverwrite
 )
 
 
@@ -109,7 +110,7 @@ class Banks(Cog):
         confirmEmbed = Embed(
             title="Confirmation",
             description="Are you sure about opening a bank with these informations ?",
-            color=Colour.yellow(),
+            color=EMBED_COLOR,
         )
         confirmEmbed.add_field(name="Informations", value=f"**Name** : ``{name}``\n**Currency name** : ``{currency_name}``\n**Currency code** : ``{currency_code}``\n**Balance** : ``{balance}``")
 
@@ -122,11 +123,14 @@ class Banks(Cog):
 
         if not confirmView.value:
             return
-
-        bank_category: CategoryChannel = await interaction.guild.create_category(name=f"{name} bank")
         
-        bank_logs_channel: TextChannel = await bank_category.create_text_channel(name="logs")
-
+        perms = {
+            interaction.guild.default_role : PermissionOverwrite(view_channel=False)
+            }
+        
+        bank_category: CategoryChannel = await interaction.guild.create_category(name=f"{name} bank", overwrites=perms)
+        
+        bank_logs_channel: TextChannel = await interaction.guild.create_text_channel(name="logs", category=bank_category)
 
         await self.db.request(
             "INSERT INTO banks (guildId, bankCategoryId, bankLogsChannelId, Name, currencyName, currencyCode, balance, created_at) VALUES (?,?,?,?,?,?,?,?)",
@@ -184,7 +188,7 @@ class Banks(Cog):
         confirmEmbed = Embed(
             title="Confirmation",
             description=f"Are you sure about closing **`{bank[4]}`** ?",
-            color=Colour.yellow(),
+            color=EMBED_COLOR,
         )
         confirmView = Confirm(confirm_message=f"`{bank[4]}` Bank closed !", cancel_message="Closing canceled !")
         await interaction.response.send_message(
@@ -228,10 +232,12 @@ class Banks(Cog):
             color=EMBED_COLOR,
             description=f"Created {creation_date.strftime('%A %d %B %Y')}",
         )
+        accounts_number = len(await self.db.get_fetchall("SELECT * FROM accounts WHERE bankId=?", (bank[0],)))
 
         embed.add_field(name="Currency:", value=f"`{bank[5]}`", inline=True)
         embed.add_field(name="Currency Code:", value=f"`{bank[6]}`", inline=True)
         embed.add_field(name="Balance:", value=f"`{bank[7]} {bank[6]}`", inline=True)
+        embed.add_field(name="Accounts number:", value=f"`{accounts_number}` account{'s' if accounts_number>1 else ''}", inline=True)
 
         embed.set_footer(text=f"ID: {bank[0]}")
 
@@ -249,6 +255,8 @@ class Banks(Cog):
             embed.add_field(name=f"{name} ({currency_code})", value=f"> Created {creation_date.strftime('%A %d %B %Y')}\n> ID: {bank_id}")
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
 
 def setup(client: Bot):
     client.add_cog(Banks(client))
