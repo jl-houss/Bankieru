@@ -2,7 +2,7 @@ from aiosqlite import Connection, Cursor
 from nextcord.ext.commands import Bot, Cog
 
 from utils.utils import DB
-from utils.views import Confirm, AccountOpenView, AccountCloseView
+from utils.views import Confirm, AccountOpenView, AccountMessageView
 from utils.constants import *
 
 from nextcord.ext import application_checks
@@ -29,7 +29,7 @@ class Banks(Cog):
     @Cog.listener()
     async def on_ready(self):
         self.client.add_view(AccountOpenView(self.client))
-        self.client.add_view(AccountCloseView(self.client))
+        self.client.add_view(AccountMessageView(self.client))
         
         await self.db.request(
             """

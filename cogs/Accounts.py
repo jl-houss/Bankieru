@@ -2,7 +2,7 @@ from aiosqlite import Connection, Cursor
 from nextcord.ext.commands import Bot, Cog
 
 from utils.utils import DB
-from utils.views import Confirm, AccountCloseView
+from utils.views import Confirm, AccountMessageView
 from utils.constants import *
 
 from datetime import datetime
@@ -42,6 +42,7 @@ class Accounts(Cog):
                 "created_at"	TEXT NOT NULL,
                 "accountChannelId" INTEGER NOT NULL UNIQUE,
                 "accountMessageId" INTEGER NOT NULL UNIQUE,
+                "helpChannelId" INTEGER UNIQUE,
                 PRIMARY KEY("userId")
             );"""
         )
@@ -74,7 +75,7 @@ class Accounts(Cog):
         )
         account_channel_embed.add_field(name="Balance:", value=f"{account[2]}{bank[6]}")
         account_channel_embed.set_thumbnail(url=member.avatar)
-        panel_message = await account_channel.send(embed=account_channel_embed, view=AccountCloseView(self.client))
+        panel_message = await account_channel.send(embed=account_channel_embed, view=AccountMessageView(self.client))
         
         await self.db.request("UPDATE accounts SET accountMessageId = ? WHERE accountChannelId = ?", (panel_message.id, account_channel.id))
         
@@ -352,13 +353,26 @@ class Accounts(Cog):
             await self.client.get_channel(TRANSACTIONS_LOGS).send(embed=logEmbed)
             await self.client.get_channel(bank[3]).send(embed=logEmbed)
             
-    @Cog.listener()
+    @Cog.listener() #On_message to automatically delete normal messages in account channel
     async def on_message(self, message : Message):
         bank_category_id = await self.db.get_fetchone("SELECT bankCategoryId FROM banks WHERE guildId=?", (message.guild.id,))
+        helpChannelId = await self.db.get_fetchone("SELECT helpChannelId FROM accounts WHERE userId=?", (message.author.id,))
+
         if not message.guild:
             return
         if message.channel.category.id == bank_category_id[0] and not message.content.startswith("/") and message.author.id!=self.client.user.id:
-            await message.delete()
+            message_count = 0
+            async for _ in message.channel.history(limit=None):
+                message_count += 1
+
+            if not "help" in message.channel.name:
+                await message.delete()
+            
+            elif message_count==2 and message.channel.id==helpChannelId[0]:
+                topg_role = [role for role in message.guild.roles if role.id==TOPG_ROLE][0]
+                await message.channel.edit(name=f"{message.author.name} help🟡")
+                await message.channel.send(topg_role.mention)
+    
 
 def setup(client: Bot):
     client.add_cog(Accounts(client))
