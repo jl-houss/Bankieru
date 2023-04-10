@@ -142,26 +142,36 @@ class AccountMessageView(ui.View):
 
     @ui.button(label="Help", style=ButtonStyle.blurple, custom_id="request_help_button")
     async def account_help(self, button: ui.Button, interaction: Interaction):
-
-        help_channel_id = await self.db.get_fetchone("SELECT helpChannelId from 'accounts' WHERE userId=?", (interaction.user.id,))
-        help_channel = self.client.get_channel(help_channel_id[0]) if help_channel_id else None
-
-        if help_channel:
-            await interaction.response.send_message(embed=Embed(title="You cannot request help more than once at the same time", description=f"This is your help channel {help_channel.mention}", color=EMBED_COLOR), ephemeral=True)
+        help_channel_id = (await self.db.get_fetchone("SELECT helpChannelId from 'accounts' WHERE userId = ?", (interaction.user.id,)))[0]
+        
+        if help_channel_id:
+            help_channel = self.client.get_channel(help_channel_id)
+            alert_embed = Embed(
+                title="You cannot request help more than once at the same time", 
+                description=f"This is your help channel {help_channel.mention}", 
+                color=EMBED_COLOR
+            )
+            await interaction.response.send_message(embed=alert_embed, ephemeral=True)
             await help_channel.send(interaction.user.mention)
             return
         
         perms = {
-                interaction.guild.default_role : PermissionOverwrite(view_channel=False),
-                interaction.user : PermissionOverwrite(view_channel=True)
-            }
+            interaction.guild.default_role : PermissionOverwrite(view_channel=False),
+            interaction.user : PermissionOverwrite(view_channel=True)
+        }
         
-        new_help_channel = await interaction.guild.create_text_channel(f"{interaction.user.name}-help🔵", category=interaction.channel.category, overwrites=perms)
+        
+        new_help_channel = await interaction.channel.create_thread(name="Help")
 
-        await self.db.request("UPDATE 'accounts' SET helpChannelId=? WHERE userId=?", (new_help_channel.id, interaction.user.id))
+        await self.db.request("UPDATE accounts SET helpChannelId = ? WHERE userId = ?", (new_help_channel.id, interaction.user.id))
 
-        help_embed = Embed(title=f"Account help for {interaction.user}", description=f"{interaction.user.mention} this is your help channel, Please explain in detail Your problem so the admins can help you", color=EMBED_COLOR)
+        help_embed = Embed(
+            title=f"Account help for {interaction.user}", 
+            description=f"{interaction.user.mention} this is your help channel, Please explain in detail Your problem so the admins can help you", 
+            color=EMBED_COLOR
+        )
         initial_message : nextcord.Message = await new_help_channel.send(embed=help_embed, view=self.help_close_view)
+        await new_help_channel.send(interaction.user.mention)
 
         await asyncio.sleep(1800)
 
