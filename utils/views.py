@@ -12,9 +12,9 @@ import asyncio
 
 # Define a simple View that gives us a confirmation menu
 class Confirm(ui.View):
-    def __init__(self, confirm_message: str, cancel_message: str):
+    def __init__(self, confirm_text: str, cancel_message: str):
         super().__init__()
-        self.confirm_message = confirm_message
+        self.confirm_text = confirm_text
         self.cancel_message = cancel_message
         self.value = None
 
@@ -22,8 +22,8 @@ class Confirm(ui.View):
     # stop the View from listening to more input.
     @ui.button(label="Confirm", style=ButtonStyle.green)
     async def confirm(self, button: ui.Button, interaction: Interaction):
-        embed = Embed(title=self.confirm_message, color=EMBED_COLOR)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        embed = Embed(title=self.confirm_text, color=EMBED_COLOR)
+        await interaction.response.send_message(embed=embed)
         self.value = True
         self.stop()
 
@@ -31,9 +31,14 @@ class Confirm(ui.View):
     @ui.button(label="Cancel", style=ButtonStyle.grey)
     async def cancel(self, button: ui.Button, interaction: Interaction):
         embed = Embed(title=self.cancel_message, color=Colour.red())
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        confirm_message = await interaction.response.send_message(embed=embed)
         self.value = False
         self.stop()
+
+        await asyncio.sleep(4)
+
+        await confirm_message.delete()
+        
 
 class AccountOpenView(ui.View):
     def __init__(self, client: Bot) -> None:
@@ -56,10 +61,12 @@ class AccountOpenView(ui.View):
             description="Are you sure about opening a new account ?",
             color=EMBED_COLOR,
         )
-        confirmView = Confirm(confirm_message="Account created !", cancel_message="Creation canceled !")
-        await interaction.response.send_message(embed=confirmEmbed, view=confirmView, ephemeral=True)
+        confirmView = Confirm(confirm_text="Account created !", cancel_message="Creation canceled !")
+        confirm_message = await interaction.response.send_message(embed=confirmEmbed, view=confirmView, ephemeral=True)
 
         await confirmView.wait()
+
+        await confirm_message.delete()
 
         if confirmView.value:
             perms = {
@@ -113,10 +120,12 @@ class AccountMessageView(ui.View):
             description="Are you sure about closing your account ?",
             color=EMBED_COLOR,
         )
-        confirmView = Confirm(confirm_message="Account closed !", cancel_message="Closing canceled !")
-        await interaction.response.send_message(embed=confirmEmbed, view=confirmView, ephemeral=True)
+        confirmView = Confirm(confirm_text="Account closed !", cancel_message="Closing canceled !")
+        confirm_message = await interaction.response.send_message(embed=confirmEmbed, view=confirmView, ephemeral=True)
 
         await confirmView.wait()
+
+        await confirm_message.delete()
 
         if confirmView.value:
             account_channel = self.client.get_channel(account[4])

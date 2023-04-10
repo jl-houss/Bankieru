@@ -100,9 +100,11 @@ class Banks(Cog):
         )
 
         confirmView = Confirm(f"`{name}` Bank created !", "Creation canceled !")
-        await interaction.response.send_message(embed=confirmEmbed, view=confirmView, ephemeral=True)
+        confirm_message = await interaction.response.send_message(embed=confirmEmbed, view=confirmView, ephemeral=True)
 
         await confirmView.wait()
+
+        await confirm_message.delete()
 
         if confirmView.value: 
             bank_perms = {
@@ -181,13 +183,15 @@ class Banks(Cog):
             description=f"Are you sure about closing **`{bank[4]}`** ?",
             color=EMBED_COLOR,
         )
-        confirmView = Confirm(confirm_message=f"`{bank[4]}` Bank closed !", cancel_message="Closing canceled !")
-        await interaction.response.send_message(
+        confirmView = Confirm(confirm_text=f"`{bank[4]}` Bank closed !", cancel_message="Closing canceled !")
+        confirm_message = await interaction.response.send_message(
             embed=confirmEmbed, view=confirmView, ephemeral=True
         )
 
         await confirmView.wait()
 
+        await confirm_message.delete()
+        
         bank_category = utils.get(self.client.get_guild(bank[1]).categories, id=bank[2])
 
         if confirmView.value:
