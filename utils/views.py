@@ -77,9 +77,12 @@ class AccountOpenView(ui.View):
             bank_category = utils.get(self.client.get_guild(bank[1]).categories, id=bank[2])
 
             account_channel = await interaction.guild.create_text_channel(name=f"{interaction.user.name}-account", category=bank_category, overwrites=perms)
+            account_transactions_channel = await account_channel.create_thread(name="Transactions")
 
             mention_message = await account_channel.send(interaction.user.mention)
+            mention_message1 = await account_transactions_channel.send(interaction.user.mention)
             await mention_message.delete()
+            await mention_message1.delete()
             
             creation_date = datetime.now()
 
@@ -91,8 +94,12 @@ class AccountOpenView(ui.View):
             account_channel_embed.add_field(name="Balance:", value=f"0.0{bank[6]}")
             account_channel_embed.set_thumbnail(url=interaction.user.avatar)
             panel_message = await account_channel.send(embed=account_channel_embed, view=AccountMessageView(self.client))
+
+            tc_embed = Embed(title=f"{interaction.user}'s Transactions channel", description="You will be notified here on any transaction that involves your account", color=EMBED_COLOR)
+            tc_embed.set_thumbnail(interaction.user.avatar)
+            await account_transactions_channel.send(embed=tc_embed)
             
-            await self.db.request("INSERT INTO accounts VALUES (?,?,?,?,?,?,?)", (interaction.user.id, bank[0], 0.00, creation_date, account_channel.id, panel_message.id, None))
+            await self.db.request("INSERT INTO accounts VALUES (?,?,?,?,?,?,?,?)", (interaction.user.id, bank[0], 0.00, creation_date, account_channel.id, panel_message.id, None, account_transactions_channel.id))
             
             logEmbed = Embed(title=f"Account created at `{bank[4]}` Bank !", color=EMBED_COLOR)
             logEmbed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
@@ -129,8 +136,8 @@ class AccountMessageView(ui.View):
 
         if confirmView.value:
             account_channel = self.client.get_channel(account[4])
-            await account_channel.delete()
             await self.db.request("DELETE FROM accounts WHERE userId = ?", (interaction.user.id,))
+            await account_channel.delete()
             
             logEmbed = Embed(title=f"Account closed at `{bank[4]}` Bank", color=EMBED_COLOR)
             logEmbed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
@@ -142,8 +149,9 @@ class AccountMessageView(ui.View):
 
     @ui.button(label="Help", style=ButtonStyle.blurple, custom_id="request_help_button")
     async def account_help(self, button: ui.Button, interaction: Interaction):
-        help_channel_id = (await self.db.get_fetchone("SELECT helpChannelId from 'accounts' WHERE userId = ?", (interaction.user.id,)))[0]
-        
+        help_channel_id = (await self.db.get_fetchone("SELECT helpChannelId from 'accounts' WHERE userId = ?", (interaction.user.id,)))
+        help_channel_id = help_channel_id[0] if help_channel_id else None
+
         if help_channel_id:
             help_channel = self.client.get_channel(help_channel_id)
             alert_embed = Embed(

@@ -109,7 +109,7 @@ class Admin(Cog):
             
             await self.client.get_channel(TRANSACTIONS_LOGS).send(embed=logEmbed)
             await self.client.get_channel(bank[3]).send(embed=logEmbed)
-            await self.client.get_channel(receiver_account[4]).send(embed=logEmbed_2)
+            await self.client.get_channel(receiver_account[7]).send(embed=logEmbed_2)
         
 def setup(client : Bot):
     client.add_cog(Admin(client))

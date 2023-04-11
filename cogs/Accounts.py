@@ -42,6 +42,7 @@ class Accounts(Cog):
                 "accountChannelId" INTEGER NOT NULL UNIQUE,
                 "accountMessageId" INTEGER NOT NULL UNIQUE,
                 "helpChannelId" INTEGER UNIQUE,
+                "transactionsChannelId" INTEGER NOT NULL UNIQUE,
                 PRIMARY KEY("userId")
             );"""
         )
@@ -53,7 +54,7 @@ class Accounts(Cog):
         if not account:
             return
         
-        if message.embeds[0].title.startswith("Account of"):
+        if message.embeds and message.embeds[0].title.startswith("Account of"):
             return
         
         if message.flags.ephemeral:
@@ -194,7 +195,7 @@ class Accounts(Cog):
             logEmbed.set_footer(text=f"BANK ID: {bank[0]}")
             await self.client.get_channel(TRANSACTIONS_LOGS).send(embed=logEmbed)
             await self.client.get_channel(bank[3]).send(embed=logEmbed)
-            await self.client.get_channel(receiver_account[4]).send(embed=logEmbed_2)
+            await self.client.get_channel(receiver_account[7]).send(embed=logEmbed_2)
             
 
 def setup(client: Bot):
