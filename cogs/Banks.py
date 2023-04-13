@@ -2,7 +2,7 @@ from aiosqlite import Connection, Cursor
 from nextcord.ext.commands import Bot, Cog
 
 from utils.utils import DB
-from utils.views import Confirm, AccountOpenView, AccountMessageView
+from utils.views import Confirm, AccountOpenView, AccountPanel, HelpPanel
 from utils.constants import *
 
 from nextcord.ext import application_checks
@@ -29,23 +29,22 @@ class Banks(Cog):
     @Cog.listener()
     async def on_ready(self):
         self.client.add_view(AccountOpenView(self.client))
-        self.client.add_view(AccountMessageView(self.client))
+        self.client.add_view(AccountPanel(self.client))
+        self.client.add_view(HelpPanel(self.client))
         
-        await self.db.request(
-            """
+        await self.db.request("""
             CREATE TABLE IF NOT EXISTS "banks" (
-                "bankId"	        INTEGER NOT NULL UNIQUE,
-                "guildId"	        INTEGER NOT NULL UNIQUE,
-                "bankCategoryId"	INTEGER NOT NULL UNIQUE,
-                "bankLogsChannelId"	INTEGER NOT NULL UNIQUE,
-                "Name"	            TEXT NOT NULL UNIQUE,
-                "currencyName"	    TEXT NOT NULL UNIQUE,
-                "currencyCode"	    TEXT NOT NULL UNIQUE,
+                "bank_id"	        INTEGER NOT NULL UNIQUE,
+                "guild_id"	        INTEGER NOT NULL UNIQUE,
+                "name"	            TEXT NOT NULL UNIQUE,
                 "balance"	        REAL NOT NULL,
-                "created_at"	    TEXT NOT NULL UNIQUE,
-                PRIMARY KEY("bankId" AUTOINCREMENT)
-            );"""
-        )
+                "currency_name"	    TEXT NOT NULL UNIQUE,
+                "currency_code"	    TEXT NOT NULL UNIQUE,
+                "creation_date"	    TEXT NOT NULL UNIQUE,
+                "bank_category_id"	INTEGER NOT NULL UNIQUE,
+                "logs_channel_id"	INTEGER NOT NULL UNIQUE,
+                PRIMARY KEY("bank_id" AUTOINCREMENT)
+            );""")
 
     @slash_command(name="bank")
     async def bank(self, interaction: Interaction):
@@ -65,7 +64,7 @@ class Banks(Cog):
         currency_name = " ".join([word[0].upper() + word[1:].lower() for word in currency_name.split()])
         currency_code = currency_code.upper()
 
-        if await self.db.get_fetchone("SELECT * FROM banks WHERE guildId = ?", (interaction.guild.id,)):
+        if await self.db.get_fetchone("SELECT * FROM banks WHERE guild_id = ?", (interaction.guild.id,)):
             embed = Embed(title="This server has already a bank !", color=Colour.red())
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
@@ -75,14 +74,14 @@ class Banks(Cog):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
-        if await self.db.get_fetchone("SELECT * FROM banks WHERE currencyName = ?", (currency_name,)):
+        if await self.db.get_fetchone("SELECT * FROM banks WHERE currency_name = ?", (currency_name,)):
             embed = Embed(
                 title="This currency name is already taken !", color=Colour.red()
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
-        if await self.db.get_fetchone("SELECT * FROM banks WHERE currencyCode = ?", (currency_code,)):
+        if await self.db.get_fetchone("SELECT * FROM banks WHERE currency_code = ?", (currency_code,)):
             embed = Embed(
                 title="This currency code is already taken !", color=Colour.red()
             )
@@ -122,20 +121,20 @@ class Banks(Cog):
             bank_logs_channel: TextChannel = await interaction.guild.create_text_channel(name="logs", category=bank_category)
             
             await self.db.request(
-                "INSERT INTO banks (guildId, bankCategoryId, bankLogsChannelId, Name, currencyName, currencyCode, balance, created_at) VALUES (?,?,?,?,?,?,?,?)",
+                "INSERT INTO banks (guild_id, name, balance, currency_name, currency_code, creation_date, bank_category_id, logs_channel_id) VALUES (?,?,?,?,?,?,?,?)",
                 (
                     interaction.guild.id,
-                    bank_category.id,
-                    bank_logs_channel.id,
                     name,
+                    balance,
                     currency_name,
                     currency_code,
-                    balance,
                     datetime.now(),
+                    bank_category.id,
+                    bank_logs_channel.id,
                 ),
             )
             
-            bank_id = (await self.db.get_fetchone("SELECT bankId FROM banks WHERE name = ?", (name,)))[0]
+            bank_id = (await self.db.get_fetchone("SELECT bank_id FROM banks WHERE name = ?", (name,)))[0]
             
             logEmbed = Embed(title=f"`{name}` Bank created !", color=EMBED_COLOR)
             logEmbed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
@@ -152,26 +151,20 @@ class Banks(Cog):
     async def close(
         self,
         interaction: Interaction,
-        bank_id: str = SlashOption(
+        id: str = SlashOption(
             name="bank-id", description="The id of the bank to close", required=False
         ),
     ):
-        if bank_id:
-            bank = await self.db.get_fetchone(
-                "SELECT * FROM banks WHERE bankId = ?", (bank_id,)
-            )
-            if not bank:
-                embed = Embed(
-                    title="This id doesn't match any bank !", color=Colour.red()
-                )
+        if id:
+            bank_id, bank_name, bank_guild_id, bank_category_id = await self.db.get_fetchone("SELECT bank_id, name, guild_id, bank_category_id FROM banks WHERE bank_id = ?", (id,))
+            if not bank_id:
+                embed = Embed(title="This id doesn't match any bank !", color=Colour.red())
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
 
         else:
-            bank = await self.db.get_fetchone(
-                "SELECT * FROM banks WHERE guildId = ?", (interaction.guild.id,)
-            )
-            if not bank:
+            bank_id, bank_name, bank_guild_id, bank_category_id = await self.db.get_fetchone("SELECT bank_id, name, guild_id, bank_category_id FROM banks WHERE guild_id = ?", (interaction.guild.id,))
+            if not bank_id:
                 embed = Embed(
                     title="This server doesn't have a bank !", color=Colour.red()
                 )
@@ -180,10 +173,10 @@ class Banks(Cog):
 
         confirmEmbed = Embed(
             title="Confirmation",
-            description=f"Are you sure about closing **`{bank[4]}`** ?",
+            description=f"Are you sure about closing `{bank_name}` Bank ?",
             color=EMBED_COLOR,
         )
-        confirmView = Confirm(confirm_text=f"`{bank[4]}` Bank closed !", cancel_message="Closing canceled !")
+        confirmView = Confirm(confirm_text=f"`{bank_name}` Bank closed !", cancel_message="Closing canceled !")
         confirm_message = await interaction.response.send_message(
             embed=confirmEmbed, view=confirmView, ephemeral=True
         )
@@ -192,7 +185,7 @@ class Banks(Cog):
 
         await confirm_message.delete()
         
-        bank_category = utils.get(self.client.get_guild(bank[1]).categories, id=bank[2])
+        bank_category = utils.get(self.client.get_guild(bank_guild_id).categories, id=bank_category_id)
 
         if confirmView.value:
             for channel in bank_category.channels:
@@ -200,58 +193,56 @@ class Banks(Cog):
 
             await bank_category.delete()
 
-            await self.db.request("DELETE FROM banks WHERE bankId = ?", (bank[0],))
-            await self.db.request("DELETE FROM accounts WHERE bankId = ?", (bank[0],))
+            await self.db.request("DELETE FROM banks WHERE bank_id = ?", (bank_id,))
+            await self.db.request("DELETE FROM accounts WHERE bank_id = ?", (bank_id,))
             
-            logEmbed = Embed(title=f"`{bank[4]}` Bank closed !", color=EMBED_COLOR)
+            logEmbed = Embed(title=f"`{bank_name}` Bank closed !", color=EMBED_COLOR)
             logEmbed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
             logEmbed.set_thumbnail(url=interaction.guild.icon)
-            logEmbed.set_footer(text=f"BANK ID: {bank[0]}")
+            logEmbed.set_footer(text=f"BANK ID: {bank_id}")
             await self.client.get_channel(BANKS_LOGS).send(embed=logEmbed)
 
     @application_checks.has_permissions(administrator=True)
     @bank.subcommand(name="info")
     async def info(self, interaction: Interaction):
-        bank = await self.db.get_fetchone(
-            "SELECT * FROM banks WHERE guildId = ?", (interaction.guild.id,)
+        bank_id, bank_name, balance, currency_name, currency_code, creation_date = await self.db.get_fetchone(
+            "SELECT bank_id, name, balance, currency_name, currency_code, creation_date  FROM banks WHERE guild_id = ?", (interaction.guild.id,)
         )
-        if not bank:
+        if not bank_id:
             embed = Embed(title="This server doesn't have a bank !", color=Colour.red())
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         
-        creation_date = datetime.strptime(bank[8], "%Y-%m-%d %H:%M:%S.%f")
+        creation_date = datetime.strptime(creation_date, "%Y-%m-%d %H:%M:%S.%f")
     
         embed = Embed(
-            title=f"{bank[4]} Bank",
+            title=f"{bank_name} Bank",
             color=EMBED_COLOR,
             description=f"Created {creation_date.strftime('%A %d %B %Y')}",
         )
-        accounts_number = len(await self.db.get_fetchall("SELECT * FROM accounts WHERE bankId=?", (bank[0],)))
+        accounts_number = len(await self.db.get_fetchall("SELECT * FROM accounts WHERE bank_id = ?", (bank_id,)))
 
-        embed.add_field(name="Currency:", value=f"`{bank[5]}`", inline=True)
-        embed.add_field(name="Currency Code:", value=f"`{bank[6]}`", inline=True)
-        embed.add_field(name="Balance:", value=f"`{bank[7]} {bank[6]}`", inline=True)
+        embed.add_field(name="Currency:", value=f"`{currency_name}`", inline=True)
+        embed.add_field(name="Currency Code:", value=f"`{currency_code}`", inline=True)
+        embed.add_field(name="Balance:", value=f"`{balance}{currency_code}`", inline=True)
         embed.add_field(name="Accounts number:", value=f"`{accounts_number}` account{'s' if accounts_number>1 else ''}", inline=True)
 
-        embed.set_footer(text=f"ID: {bank[0]}")
+        embed.set_footer(text=f"ID: {bank_id}")
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @application_checks.has_role(TOPG_ROLE)
     @bank.subcommand(name="list")
     async def list(self, interaction: Interaction):
-        banks = await self.db.get_fetchall("SELECT * FROM banks")
+        banks = await self.db.get_fetchall("SELECT bank_id, name, currency_code, creation_date FROM banks")
 
         embed = Embed(title="Banks list", color=EMBED_COLOR, description="No bank at the moment" if not banks else None)
-        for bank_id, guild_id, bank_category_id, bank_logs_channel_id, name, currency_name, currency_code, balance, created_at in banks:
-            creation_date = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S.%f")
+        for bank_id, name, currency_code, creation_date in banks:
+            creation_date = datetime.strptime(creation_date, "%Y-%m-%d %H:%M:%S.%f")
                 
-            embed.add_field(name=f"{name} ({currency_code})", value=f"> Created {creation_date.strftime('%A %d %B %Y')}\n> ID: {bank_id}")
+            embed.add_field(name=f"{name} Bank ({currency_code})", value=f"> Created {creation_date.strftime('%A %d %B %Y')}\n> ID: {bank_id}")
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
-
-
 
 def setup(client: Bot):
     client.add_cog(Banks(client))

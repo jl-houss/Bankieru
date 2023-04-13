@@ -1,13 +1,11 @@
 
-import nextcord
 from utils.constants import *
 from utils.utils import DB
 
-from nextcord import ui, ButtonStyle, Interaction, Colour, Embed
+from nextcord import ui, ButtonStyle, Interaction, Colour, Embed, Message, errors, PermissionOverwrite, utils
 from nextcord.ext.commands import Bot
-from nextcord import PermissionOverwrite, utils
 from datetime import datetime
-import asyncio
+from asyncio import TimeoutError, sleep
 
 
 # Define a simple View that gives us a confirmation menu
@@ -23,7 +21,7 @@ class Confirm(ui.View):
     @ui.button(label="Confirm", style=ButtonStyle.green)
     async def confirm(self, button: ui.Button, interaction: Interaction):
         embed = Embed(title=self.confirm_text, color=EMBED_COLOR)
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True, delete_after=2)
         self.value = True
         self.stop()
 
@@ -31,13 +29,9 @@ class Confirm(ui.View):
     @ui.button(label="Cancel", style=ButtonStyle.grey)
     async def cancel(self, button: ui.Button, interaction: Interaction):
         embed = Embed(title=self.cancel_message, color=Colour.red())
-        confirm_message = await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True, delete_after=2)
         self.value = False
         self.stop()
-
-        await asyncio.sleep(4)
-
-        await confirm_message.delete()
         
 
 class AccountOpenView(ui.View):
@@ -48,17 +42,16 @@ class AccountOpenView(ui.View):
         
     @ui.button(label="Open account", style=ButtonStyle.blurple, custom_id="open_account_button")
     async def open_account(self, button: ui.Button, interaction: Interaction):
-        bank = await self.db.get_fetchone("SELECT * FROM banks WHERE guildId = ?", (interaction.guild.id,))
-        account = await self.db.get_fetchone("SELECT * FROM accounts WHERE userId = ? AND bankId = ?", (interaction.user.id, bank[0]))
+        bank_id, bank_name, currency_code, bank_category_id, bank_logs_channel_id = await self.db.get_fetchone("SELECT bank_id, name, currency_code, bank_category_id, logs_channel_id FROM banks WHERE guild_id = ?", (interaction.guild.id,))
 
-        if account:
+        if await self.db.get_fetchone("SELECT * FROM accounts WHERE user_id = ? AND bank_id = ?", (interaction.user.id, bank_id)):
             embed = Embed(title="You already have an account at this bank !", color=Colour.red())
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         
         confirmEmbed = Embed(
             title="Confirmation",
-            description="Are you sure about opening a new account ?",
+            description="Are you sure about opening an account ?",
             color=EMBED_COLOR,
         )
         confirmView = Confirm(confirm_text="Account created !", cancel_message="Creation canceled !")
@@ -74,53 +67,51 @@ class AccountOpenView(ui.View):
                 interaction.user : PermissionOverwrite(view_channel=True)
             }
         
-            bank_category = utils.get(self.client.get_guild(bank[1]).categories, id=bank[2])
+            bank_category = utils.get(self.client.get_guild(interaction.guild.id).categories, id=bank_category_id)
 
             account_channel = await interaction.guild.create_text_channel(name=f"{interaction.user.name}-account", category=bank_category, overwrites=perms)
-            account_transactions_channel = await account_channel.create_thread(name="Transactions")
-
-            mention_message = await account_channel.send(interaction.user.mention)
-            mention_message1 = await account_transactions_channel.send(interaction.user.mention)
-            await mention_message.delete()
-            await mention_message1.delete()
+            transactions_channel = await account_channel.create_thread(name="Transactions")
             
             creation_date = datetime.now()
 
-            account_channel_embed = Embed(
+            panel_embed = Embed(
                 title=f"Account of `{interaction.user.name}`",
                 description=f"Created {creation_date.strftime('%A %d %B %Y')}",
                 color=EMBED_COLOR,
             )
-            account_channel_embed.add_field(name="Balance:", value=f"0.0{bank[6]}")
-            account_channel_embed.set_thumbnail(url=interaction.user.avatar)
-            panel_message = await account_channel.send(embed=account_channel_embed, view=AccountMessageView(self.client))
+            panel_embed.add_field(name="Balance:", value=f"`0.0`{currency_code}")
+            panel_embed.set_thumbnail(url=interaction.user.avatar)
+            await account_channel.send(embed=panel_embed, view=AccountPanel(self.client))
 
-            tc_embed = Embed(title=f"{interaction.user}'s Transactions channel", description="You will be notified here on any transaction that involves your account", color=EMBED_COLOR)
-            tc_embed.set_thumbnail(interaction.user.avatar)
-            await account_transactions_channel.send(embed=tc_embed)
+            tc_embed = Embed(title=f"Transactions Logs", description="These are the logs of all your transactions.", color=EMBED_COLOR)
+            tc_embed.set_thumbnail(url=interaction.user.avatar)
+            await transactions_channel.send(embed=tc_embed)
             
-            await self.db.request("INSERT INTO accounts VALUES (?,?,?,?,?,?,?,?)", (interaction.user.id, bank[0], 0.00, creation_date, account_channel.id, panel_message.id, None, account_transactions_channel.id))
+            mention = await account_channel.send(interaction.user.mention)
+            await mention.delete()
+            mention = await transactions_channel.send(interaction.user.mention)
+            await mention.delete()
             
-            logEmbed = Embed(title=f"Account created at `{bank[4]}` Bank !", color=EMBED_COLOR)
+            await self.db.request("INSERT INTO accounts VALUES (?,?,?,?,?,?,?)", (interaction.user.id, bank_id, 0.00, creation_date, account_channel.id, None, transactions_channel.id))
+            
+            logEmbed = Embed(title=f"Account created at `{bank_name}` Bank !", color=EMBED_COLOR)
             logEmbed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
             logEmbed.set_thumbnail(url=interaction.guild.icon)
-            logEmbed.set_footer(text=f"BANK ID: {bank[0]}")
+            logEmbed.set_footer(text=f"BANK ID: {bank_id}")
             await self.client.get_channel(ACCOUNTS_LOGS).send(embed=logEmbed)
-            await self.client.get_channel(bank[3]).send(embed=logEmbed)
+            await self.client.get_channel(bank_logs_channel_id).send(embed=logEmbed)
             
 
-class AccountMessageView(ui.View):
+class AccountPanel(ui.View):
     def __init__(self, client: Bot) -> None:
         super().__init__(timeout=None)
         self.client = client
         self.db: DB = client.db
-        self.help_close_view = HelpCloseView(self.client)
-        self.client.add_view(self.help_close_view)
         
     @ui.button(label="Close account", style=ButtonStyle.red, custom_id="close_account_button")
     async def close_account(self, button: ui.Button, interaction: Interaction):
-        bank = await self.db.get_fetchone("SELECT * FROM banks WHERE guildId = ?", (interaction.guild.id,))
-        account = await self.db.get_fetchone("SELECT * FROM accounts WHERE userId = ? AND bankId = ?", (interaction.user.id, bank[0]))
+        bank_id, bank_name, bank_logs_channel_id = await self.db.get_fetchone("SELECT bank_id, name, logs_channel_id FROM banks WHERE guild_id = ?", (interaction.guild.id,))
+        panel_id, = await self.db.get_fetchone("SELECT panel_channel_id FROM accounts WHERE panel_channel_id = ?", (interaction.channel.id,))
 
         confirmEmbed = Embed(
             title="Confirmation",
@@ -135,67 +126,83 @@ class AccountMessageView(ui.View):
         await confirm_message.delete()
 
         if confirmView.value:
-            account_channel = self.client.get_channel(account[4])
-            await self.db.request("DELETE FROM accounts WHERE userId = ?", (interaction.user.id,))
+            await sleep(2.5)
+            account_channel = self.client.get_channel(panel_id)
             await account_channel.delete()
+            await self.db.request("DELETE FROM accounts WHERE panel_channel_id = ?", (panel_id,))
             
-            logEmbed = Embed(title=f"Account closed at `{bank[4]}` Bank", color=EMBED_COLOR)
+            logEmbed = Embed(title=f"Account closed at `{bank_name}` Bank", color=EMBED_COLOR)
             logEmbed.set_author(name=interaction.user, icon_url=interaction.user.avatar)
             logEmbed.set_thumbnail(url=interaction.guild.icon)
-            logEmbed.set_footer(text=f"BANK ID: {bank[0]}")
+            logEmbed.set_footer(text=f"BANK ID: {bank_id}")
             await self.client.get_channel(ACCOUNTS_LOGS).send(embed=logEmbed)
-            await self.client.get_channel(bank[3]).send(embed=logEmbed)
+            await self.client.get_channel(bank_logs_channel_id).send(embed=logEmbed)
 
 
     @ui.button(label="Help", style=ButtonStyle.blurple, custom_id="request_help_button")
     async def account_help(self, button: ui.Button, interaction: Interaction):
-        help_channel_id = (await self.db.get_fetchone("SELECT helpChannelId from 'accounts' WHERE userId = ?", (interaction.user.id,)))
-        help_channel_id = help_channel_id[0] if help_channel_id else None
+        user_id, help_channel_id  = await self.db.get_fetchone("SELECT user_id, help_channel_id from accounts WHERE panel_channel_id = ?", (interaction.channel.id,))
+        
+        if user_id != interaction.user.id:
+            alert_embed = Embed(
+                title="You are not the owner of this account !",
+                description=f"Only {self.client.get_user(user_id).mention} can use this.",
+                color=EMBED_COLOR
+            )
+            await interaction.response.send_message(embed=alert_embed, ephemeral=True)
+            return
 
         if help_channel_id:
             help_channel = self.client.get_channel(help_channel_id)
             alert_embed = Embed(
-                title="You cannot request help more than once at the same time", 
-                description=f"This is your help channel {help_channel.mention}", 
+                title="You already have a help thread !", 
+                description=f"This is your help thread {help_channel.mention}.", 
                 color=EMBED_COLOR
             )
             await interaction.response.send_message(embed=alert_embed, ephemeral=True)
             await help_channel.send(interaction.user.mention)
             return
         
-        perms = {
-            interaction.guild.default_role : PermissionOverwrite(view_channel=False),
-            interaction.user : PermissionOverwrite(view_channel=True)
-        }
-        
-        
-        new_help_channel = await interaction.channel.create_thread(name="Help")
-
-        await self.db.request("UPDATE accounts SET helpChannelId = ? WHERE userId = ?", (new_help_channel.id, interaction.user.id))
-
-        help_embed = Embed(
-            title=f"Account help for {interaction.user}", 
-            description=f"{interaction.user.mention} this is your help channel, Please explain in detail Your problem so the admins can help you", 
-            color=EMBED_COLOR
+        confirmEmbed = Embed(
+            title="Confirmation",
+            description="Are you sure about opening a help thread ?",
+            color=EMBED_COLOR,
         )
-        initial_message : nextcord.Message = await new_help_channel.send(embed=help_embed, view=self.help_close_view)
-        await new_help_channel.send(interaction.user.mention)
+        confirmView = Confirm(confirm_text="Help thread created !", cancel_message="Help thread creation canceled.")
+        confirm_message = await interaction.response.send_message(embed=confirmEmbed, view=confirmView, ephemeral=True)
 
-        await asyncio.sleep(1800)
+        await confirmView.wait()
 
-        try:
-            last_message : nextcord.Message = await new_help_channel.fetch_message(new_help_channel.last_message_id)
-        except nextcord.errors.NotFound:
-            return
-        
-        if last_message.id == initial_message.id:
-            await self.db.request("UPDATE 'accounts' SET helpChannelId=? WHERE helpChannelId=?", (None, new_help_channel.id,))
-            
-            await new_help_channel.delete()
-            await self.client.get_channel(BANKS_LOGS).send(embed=Embed(title=f"{interaction.user}'s Help channel closed", color=EMBED_COLOR))
+        await confirm_message.delete()
 
+        if confirmView.value:
+            new_help_channel = await interaction.channel.create_thread(name="Help")
 
-class HelpCloseView(ui.View):
+            await self.db.request("UPDATE accounts SET help_channel_id = ? WHERE user_id = ?", (new_help_channel.id, interaction.user.id))
+
+            help_embed = Embed(
+                title=f"Account Help", 
+                description=f"{interaction.user.mention} this is your help thread.\nPlease explain in detail your problem, the admins will help you.", 
+                color=EMBED_COLOR
+            )
+            help_embed.set_thumbnail(url=interaction.user.avatar)
+            await new_help_channel.send(embed=help_embed, view=HelpPanel(self.client))
+            await new_help_channel.send(interaction.user.mention, delete_after=1)
+
+            def is_allowed(message: Message):
+                return message.author.id == interaction.user.id and message.channel.id == new_help_channel.id
+
+            try:
+                await self.client.wait_for("message", timeout=1800, check=is_allowed)
+            except TimeoutError:                
+                await self.db.request("UPDATE accounts SET help_channel_id = ? WHERE help_channel_id = ?", (None, new_help_channel.id,))
+                
+                await new_help_channel.delete()
+                return
+            else:
+                await new_help_channel.send(f"<@&{TOPG_ROLE}>", delete_after=1)
+
+class HelpPanel(ui.View):
     def __init__(self, client: Bot) -> None:
         super().__init__(timeout=None)
         self.client = client
@@ -203,14 +210,26 @@ class HelpCloseView(ui.View):
 
     @ui.button(label="Close", style=ButtonStyle.red, custom_id="close_help_channel")
     async def close_help_channel(self, button: ui.Button, interaction: Interaction):
-        help_channel_id = await self.db.get_fetchone("SELECT helpChannelId from 'accounts' WHERE helpChannelId=?", (interaction.channel.id,))
-        help_channel = self.client.get_channel(help_channel_id[0])
+        help_channel_id, = await self.db.get_fetchone("SELECT help_channel_id from accounts WHERE help_channel_id = ?", (interaction.channel.id,))
+        help_channel = self.client.get_channel(help_channel_id)
 
         if not help_channel_id:
             await interaction.response.send_message("This is not a help channel anymore, You can delete it")
             return
         
-        await self.db.request("UPDATE 'accounts' SET helpChannelId=? WHERE helpChannelId=?", (None, interaction.channel.id,))
-        
-        await interaction.channel.delete()
-        await self.client.get_channel(BANKS_LOGS).send(embed=Embed(title=f"{interaction.user}'s Help channel closed", color=EMBED_COLOR))
+        confirmEmbed = Embed(
+            title="Confirmation",
+            description="Are you sure about closing your help thread ?",
+            color=EMBED_COLOR,
+        )
+        confirmView = Confirm(confirm_text="Help thread closed !", cancel_message="Help thread closing canceled.")
+        confirm_message = await interaction.response.send_message(embed=confirmEmbed, view=confirmView, ephemeral=True)
+
+        await confirmView.wait()
+
+        await confirm_message.delete()
+
+        if confirmView.value:
+            await self.db.request("UPDATE accounts SET help_channel_id = ? WHERE help_channel_id = ?", (None, help_channel_id,))
+            await sleep(2.5)
+            await help_channel.delete()
